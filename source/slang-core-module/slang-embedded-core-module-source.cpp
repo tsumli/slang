@@ -236,6 +236,11 @@ ConversionCost getBaseTypeConversionCost(
     // conversion to `half` as a good conversion, even for small
     // types. This makes sense because we relaly want to prefer
     // conversion to `float` as the default.
+    //
+    // Note also that `bool` is deliberately excluded as a source type here: it
+    // ranks below `int8_t`, so `bool` -> `float` falls through to the "general"
+    // bucket below and stays expensive enough to be reported as a lossy
+    // implicit conversion.
     else if (
         toInfo.conversionKind == kBaseTypeConversionKind_Float &&
         toInfo.conversionRank >= kBaseTypeConversionRank_Int32 &&
@@ -249,6 +254,25 @@ ConversionCost getBaseTypeConversionCost(
         fromInfo.conversionRank >= kBaseTypeConversionRank_Int8)
     {
         return kConversionCost_IntegerToHalfConversion;
+    }
+
+    // Converting a floating-point value to `bool` collapses every value to one
+    // of two, so it costs strictly more than the exact reverse direction. This
+    // is an exception to the kind/rank model above, and it exists so that
+    // `bool` and `float` have a common type at all: both directions would
+    // otherwise land in the "general" bucket below at equal cost, and
+    // `TryJoinTypes` only names a common type when one direction is cheaper.
+    //
+    // `?:` is declared as a generic `operator?:<T>`, so this is what decides
+    // the type of `cond ? floatValue : boolValue`. Ordering the two directions
+    // makes that `float` however the operands are spelled, as C++ and HLSL do.
+    //
+    // The cost only moves within the range that still counts as an implicit
+    // conversion, so `bool b = 1.5f;` is diagnosed exactly as before.
+    else if (
+        toInfo.tag == BaseType::Bool && fromInfo.conversionKind == kBaseTypeConversionKind_Float)
+    {
+        return kConversionCost_FloatToBoolConversion;
     }
     // All other cases are considered as "general" conversions,
     // where we don't consider any one conversion better than

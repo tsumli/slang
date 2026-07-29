@@ -99,23 +99,29 @@ def getConversionCost(fromKind, fromRank, toKind, toRank):
     if toKind == kKind_Float and toRank >= kRank_Int16 and fromRank >= kRank_Int8:
         return 500  # kConversionCost_IntegerToHalfConversion
 
+    # Note kTypes has no bool entry, so the C++ function's Bool -> Int and
+    # Float -> Bool special cases have no counterpart here.
     return 900  # kConversionCost_GeneralConversion
 
 
 def inferType(typeA, typeB):
     """Determine which type T is inferred when both types constrain the same
-    generic parameter. Mirrors TryJoinTypes in slang-check-constraint.cpp."""
+    generic parameter, or None when the two types have no common type. Mirrors
+    TryJoinTypes in slang-check-constraint.cpp."""
 
     # cost to convert B to A
     costBtoA = getConversionCost(typeB.kind, typeB.rank, typeA.kind, typeA.rank)
     # cost to convert A to B
     costAtoB = getConversionCost(typeA.kind, typeA.rank, typeB.kind, typeB.rank)
 
-    # TryJoinTypes: "if (costConvertRightToLeft > costConvertLeftToRight) return right;"
+    # TryJoinTypes names the type the other one converts to more cheaply, and
+    # fails when neither direction is cheaper, so that the answer cannot depend
+    # on the order the two types were written in.
     if costBtoA > costAtoB:
         return typeB
-    else:
+    if costAtoB > costBtoA:
         return typeA
+    return None
 
 
 def getTypeCode(t):
@@ -125,11 +131,14 @@ def getTypeCode(t):
 
 def shouldSkipPair(ta, tb):
     """Skip pairs that produce compiler warnings or backend errors:
+    - Types with no common type at all: the call would not compile.
     - Integer + half -> T=half: E30081 'implicit conversion not recommended'
       and CPU backend cannot convert half<->int.
     - float + double -> T=double: E30082 'implicit float-to-double conversion'
       warns about performance."""
     inferred = inferType(ta, tb)
+    if inferred is None:
+        return True
     if inferred.name == "half":
         if ta.isInteger() or tb.isInteger():
             return True

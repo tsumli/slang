@@ -162,6 +162,11 @@ FIDDLE() namespace Slang
         // TODO: make these conversions not be allowed implicitly in "Slang mode"
         kConversionCost_GeneralConversion = 900,
 
+        // Discouraged like the conversions above, but strictly worse than the
+        // exact `bool` -> floating-point direction. Ordering the two is what
+        // gives `bool` and `float` a common type at all.
+        kConversionCost_FloatToBoolConversion = 950,
+
         // This is the cost of an explicit conversion, which should
         // not actually be performed.
         kConversionCost_Explicit = 90000,
@@ -188,9 +193,19 @@ FIDDLE() namespace Slang
         kConversionCost_TypeCoercionConstraintPlusScalarToVector =
             kConversionCost_TypeCoercionConstraint + kConversionCost_ScalarToVector,
 
+        // The most expensive conversion that still counts as implicit. Anything
+        // dearer has to be asked for with an explicit cast. This sits just below
+        // the placeholder cost above, because that placeholder stands for a cost
+        // that is not known yet rather than for a conversion anyone can perform.
+        kConversionCost_LastImplicitConversion = kConversionCost_TypeCoercionConstraint - 1,
+
         // Conversion is impossible
         kConversionCost_Impossible = 0xFFFFFFFF,
     };
+    static_assert(
+        kConversionCost_FloatToBoolConversion <= kConversionCost_LastImplicitConversion,
+        "every conversion the core module can perform implicitly must be within the implicit "
+        "range");
 
     typedef unsigned int BuiltinConversionKind;
     enum : BuiltinConversionKind

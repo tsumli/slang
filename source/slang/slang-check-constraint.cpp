@@ -316,13 +316,22 @@ Type* SemanticsVisitor::TryJoinTypes(
             auto costConvertRightToLeft = getConversionCost(leftBasic, right);
             auto costConvertLeftToRight = getConversionCost(rightBasic, left);
 
-            // Return the one that had lower conversion cost.
+            // Return the one that had lower conversion cost, and fail if
+            // neither is cheaper: `mergeTypeConstraint` folds this join over
+            // the constraint list in argument order, so breaking a tie by
+            // returning an operand would make the inferred generic argument
+            // depend on the order the call's arguments were written in.
+            //
+            // Such ties are real. `uint` and `intptr_t` both cost
+            // `kConversionCost_GeneralConversion` either way, because a
+            // pointer-sized integer may be only 32 bits wide, so given
+            // `vector<T,2> mk<T>(T a, T b)` the call `mk(u, p)` used to infer
+            // `T = uint` and `mk(p, u)` `T = intptr_t`.
             if (costConvertRightToLeft > costConvertLeftToRight)
                 return right;
-            else
-            {
+            if (costConvertLeftToRight > costConvertRightToLeft)
                 return left;
-            }
+            return nullptr;
         }
 
         // We can also join a vector and a scalar
@@ -443,9 +452,12 @@ static TypeCoercionWitness* findTypeCoercionWitnessForSubstitutedConstraint(
     if (constraintDecl->findModifier<ImplicitConversionModifier>())
     {
         // An `implicit` coercion constraint must be satisfied by an implicit
-        // conversion. A general conversion might be viable for an explicit cast,
-        // but it cannot be used to prove this generic constraint.
-        if (conversionCost > kConversionCost_GeneralConversion)
+        // conversion. A conversion dearer than that might be viable for an
+        // explicit cast, but it cannot be used to prove this generic
+        // constraint. This is the constraint that `vector<T,N>` -> `vector<U,N>`
+        // is declared with, so the bound has to admit every conversion that is
+        // allowed between the element types, discouraged ones included.
+        if (conversionCost > kConversionCost_LastImplicitConversion)
         {
             if (shouldEmitError)
             {
