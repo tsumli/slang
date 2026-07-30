@@ -154,13 +154,17 @@ def filterPairs(pairs):
 
 
 def generateTestBody(pairs):
-    """Generate the computeMain body for a list of (TypeInfo, TypeInfo) pairs."""
+    """Generate the computeMain body for a list of (TypeInfo, TypeInfo) pairs.
+
+    The pairs must have been through filterPairs, which drops the pairs that
+    have no common type, so that every pair here infers a concrete T."""
 
     lines = []
     lines.append("    int idx = 0;")
 
     for i, (ta, tb) in enumerate(pairs):
         inferred = inferType(ta, tb)
+        assert inferred is not None, f"{ta.name} and {tb.name} have no common type"
         code = getTypeCode(inferred)
         litA = ta.literal(3)
         litB = tb.literal(7)
